@@ -1,0 +1,39 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class OfferingsService {
+  constructor(private prisma: PrismaService) {}
+
+  async findAllAdmin(page = 1, limit = 20) {
+    const [items, total] = await Promise.all([
+      this.prisma.offering.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          transaction: {
+            include: { user: { select: { fullName: true, email: true } } },
+          },
+        },
+      }),
+      this.prisma.offering.count(),
+    ]);
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async monthlyTotals(months = 6) {
+    const since = new Date();
+    since.setMonth(since.getMonth() - months);
+    const offerings = await this.prisma.offering.findMany({
+      where: { createdAt: { gte: since } },
+      select: { amount: true, createdAt: true },
+    });
+    const buckets: Record<string, number> = {};
+    for (const o of offerings) {
+      const key = o.createdAt.toISOString().slice(0, 7);
+      buckets[key] = (buckets[key] ?? 0) + Number(o.amount);
+    }
+    return buckets;
+  }
+}

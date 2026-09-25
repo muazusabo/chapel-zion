@@ -1,0 +1,443 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================================================
+// ENUMS
+// =========================================================
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AnnouncementCategory {
+  GENERAL
+  MEETING
+  PRAYER
+  BIBLE_STUDY
+  EVANGELISM
+  FELLOWSHIP
+  IMPORTANT
+  EMERGENCY
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum EventStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum GalleryCategory {
+  WORSHIP
+  BIBLE_STUDY
+  PRAYER
+  EVANGELISM
+  RETREAT
+  FELLOWSHIP
+  OUTREACH
+  EVENTS
+  EXECUTIVES
+}
+
+enum GivingType {
+  OFFERING
+  TITHE
+  DONATION
+  SPECIAL_CONTRIBUTION
+  BUILDING_PROJECT
+  OTHER
+}
+
+enum PaymentProvider {
+  MANUAL
+  PAYSTACK
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum ContactMessageStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum ReceiptRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// =========================================================
+// USERS & AUTH
+// =========================================================
+
+model User {
+  id             String     @id @default(uuid())
+  fullName       String
+  email          String     @unique
+  phoneNumber    String?
+  studentId      String?    @unique
+  department     String?
+  faculty        String?
+  level          String?
+  passwordHash   String
+  profilePicture String?
+  role           Role       @default(USER)
+  status         UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?
+  lastLoginAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  news              News[]              @relation("NewsAuthor")
+  announcements     Announcement[]      @relation("AnnouncementAuthor")
+  transactions      Transaction[]
+  receipts          Receipt[]
+  receiptRequests   ReceiptRequest[]
+  passwordResets    PasswordResetToken[]
+  auditLogs         AdminActivityLog[]
+  contactMessages   ContactMessage[]
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// =========================================================
+// CONTENT: ANNOUNCEMENTS / NEWS / EVENTS
+// =========================================================
+
+model Announcement {
+  id           String               @id @default(uuid())
+  title        String
+  description  String               @db.Text
+  imageUrl     String?
+  category     AnnouncementCategory @default(GENERAL)
+  priority     AnnouncementPriority @default(NORMAL)
+  status       ContentStatus        @default(DRAFT)
+  publishedAt  DateTime?
+  scheduledFor DateTime?
+  authorId     String?
+  author       User?                @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([publishedAt])
+  @@map("announcements")
+}
+
+model News {
+  id            String        @id @default(uuid())
+  title         String
+  slug          String        @unique
+  featuredImage String?
+  excerpt       String?       @db.Text
+  content       String        @db.Text
+  category      String?
+  status        ContentStatus @default(DRAFT)
+  publishedAt   DateTime?
+  scheduledFor  DateTime?
+  authorId      String?
+  author        User?         @relation("NewsAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([status])
+  @@index([slug])
+  @@index([publishedAt])
+  @@map("news")
+}
+
+model Event {
+  id          String      @id @default(uuid())
+  title       String
+  description String      @db.Text
+  date        DateTime
+  startTime   String
+  endTime     String?
+  venue       String
+  imageUrl    String?
+  organizer   String?
+  status      EventStatus @default(UPCOMING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([status])
+  @@index([date])
+  @@map("events")
+}
+
+model Executive {
+  id          String   @id @default(uuid())
+  fullName    String
+  position    String
+  department  String?
+  level       String?
+  photoUrl    String?
+  biography   String?  @db.Text
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([order])
+  @@map("executives")
+}
+
+model GalleryImage {
+  id        String          @id @default(uuid())
+  imageUrl  String
+  caption   String?
+  category  GalleryCategory
+  isFeatured Boolean        @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([category])
+  @@map("gallery_images")
+}
+
+// =========================================================
+// GIVING: TRANSACTIONS / DONATIONS / OFFERINGS / RECEIPTS
+// =========================================================
+
+model Transaction {
+  id              String          @id @default(uuid())
+  reference       String          @unique
+  userId          String?
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  amount          Decimal         @db.Decimal(12, 2)
+  givingType      GivingType
+  note            String?
+  provider        PaymentProvider @default(MANUAL)
+  status          PaymentStatus   @default(PENDING)
+  metadata        Json?
+  webhookRawRef   String?         @unique
+  donation        Donation?
+  offering        Offering?
+  receipt         Receipt?
+  receiptRequests ReceiptRequest[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([status])
+  @@index([userId])
+  @@map("transactions")
+}
+
+model Donation {
+  id            String      @id @default(uuid())
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  amount        Decimal     @db.Decimal(12, 2)
+  createdAt     DateTime    @default(now())
+
+  @@map("donations")
+}
+
+model Offering {
+  id            String      @id @default(uuid())
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  amount        Decimal     @db.Decimal(12, 2)
+  createdAt     DateTime    @default(now())
+
+  @@map("offerings")
+}
+
+model Receipt {
+  id                String          @id @default(uuid())
+  receiptNumber     String          @unique
+  verificationCode  String          @unique
+  transactionId     String          @unique
+  transaction       Transaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  userId            String?
+  user              User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  requestedName     String?
+  amount            Decimal?        @db.Decimal(12, 2)
+  paymentType       GivingType?
+  paymentMethod     String?
+  issuedAt          DateTime?
+  pdfUrl            String?
+  receiptRequest    ReceiptRequest?
+  createdAt         DateTime        @default(now())
+
+  @@index([receiptNumber])
+  @@index([verificationCode])
+  @@map("receipts")
+}
+
+model ReceiptRequest {
+  id          String               @id @default(uuid())
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactionId String             @unique
+  transaction Transaction         @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  requestedName String
+  status      ReceiptRequestStatus @default(PENDING)
+  adminNote   String?
+  requestedAt DateTime             @default(now())
+  approvedAt  DateTime?
+  approvedBy  String?
+  rejectedAt  DateTime?
+  rejectedBy  String?
+  receiptId   String?              @unique
+  receipt     Receipt?             @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("receipt_requests")
+}
+
+model ChapelAccount {
+  id            String   @id @default(uuid())
+  bankName      String
+  accountName   String
+  accountNumber String
+  updatedAt     DateTime @updatedAt
+
+  @@map("chapel_account")
+}
+
+// =========================================================
+// SITE CONTENT / CMS SINGLETONS
+// =========================================================
+
+model HomepageContent {
+  id                 String   @id @default(uuid())
+  heroTitle          String   @default("SAZU FCS")
+  heroSubtitle        String   @default("Fellowship of Christian Students")
+  heroDescription    String?  @db.Text
+  heroImageUrl       String?
+  welcomeMessage     String?  @db.Text
+  welcomeImageUrl    String?
+  missionPreview     String?  @db.Text
+  visionPreview      String?  @db.Text
+  updatedAt          DateTime @updatedAt
+
+  @@map("homepage_content")
+}
+
+model AboutContent {
+  id          String   @id @default(uuid())
+  whoWeAre    String?  @db.Text
+  mission     String?  @db.Text
+  vision      String?  @db.Text
+  values      String?  @db.Text
+  whatWeDo    String?  @db.Text
+  updatedAt   DateTime @updatedAt
+
+  @@map("about_content")
+}
+
+model Scripture {
+  id        String   @id @default(uuid())
+  verseText String   @db.Text
+  reference String
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@map("scriptures")
+}
+
+model FellowshipSettings {
+  id                String   @id @default(uuid())
+  fcsName           String   @default("SAZU FCS")
+  chapelName        String?
+  logoUrl           String?
+  contactEmail      String?
+  phoneNumber       String?
+  address           String?
+  facebookUrl       String?
+  instagramUrl      String?
+  twitterUrl        String?
+  whatsappUrl       String?
+  youtubeUrl        String?
+  updatedAt         DateTime @updatedAt
+
+  @@map("fellowship_settings")
+}
+
+// =========================================================
+// CONTACT / NOTIFICATIONS / AUDIT
+// =========================================================
+
+model ContactMessage {
+  id        String               @id @default(uuid())
+  name      String
+  email     String
+  subject   String
+  message   String               @db.Text
+  status    ContactMessageStatus @default(UNREAD)
+  userId    String?
+  user      User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime             @default(now())
+
+  @@index([status])
+  @@map("contact_messages")
+}
+
+model AdminActivityLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  admin     User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+  @@index([entity])
+  @@map("admin_activity_logs")
+}
