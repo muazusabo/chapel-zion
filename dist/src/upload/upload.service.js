@@ -13,6 +13,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UploadService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const cloudinary_1 = require("cloudinary");
 const fs_1 = require("fs");
 const path_1 = require("path");
 const crypto_1 = require("crypto");
@@ -53,10 +54,35 @@ let UploadService = UploadService_1 = class UploadService {
     getBaseUrl() {
         return this.config.get('APP_URL') ?? 'http://localhost:4000';
     }
+    configureCloudinary() {
+        const cloudName = this.config.get('CLOUDINARY_CLOUD_NAME');
+        const apiKey = this.config.get('CLOUDINARY_API_KEY');
+        const apiSecret = this.config.get('CLOUDINARY_API_SECRET');
+        if (!cloudName || !apiKey || !apiSecret)
+            return false;
+        cloudinary_1.v2.config({
+            cloud_name: cloudName,
+            api_key: apiKey,
+            api_secret: apiSecret,
+            secure: true,
+        });
+        return true;
+    }
     async uploadImage(file, folder = 'general') {
         this.validate(file);
         const safeFolder = folder.replace(/[^a-zA-Z0-9/_-]/g, '-');
         const extension = MIME_EXTENSIONS[file.mimetype.toLowerCase()];
+        if (this.configureCloudinary()) {
+            const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+            const uploaded = await cloudinary_1.v2.uploader.upload(dataUri, {
+                folder: `sazu-fcs/${safeFolder}`,
+                resource_type: 'image',
+            });
+            return { url: uploaded.secure_url, publicId: uploaded.public_id };
+        }
+        if (this.config.get('NODE_ENV') === 'production') {
+            throw new Error('Image storage is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
+        }
         const filename = `${Date.now()}-${(0, crypto_1.randomUUID)()}.${extension}`;
         const folderPath = (0, path_1.join)(this.getUploadRoot(), safeFolder);
         await fs_1.promises.mkdir(folderPath, { recursive: true });
@@ -93,6 +119,19 @@ let UploadService = UploadService_1 = class UploadService {
     async deleteImage(publicId) {
         if (!publicId)
             return;
+        if (!publicId.startsWith('uploads/')) {
+            if (!this.configureCloudinary()) {
+                this.logger.warn('Cannot delete Cloudinary image: Cloudinary is not configured.');
+                return;
+            }
+            try {
+                await cloudinary_1.v2.uploader.destroy(publicId, { resource_type: 'image' });
+            }
+            catch (err) {
+                this.logger.warn(`Could not delete Cloudinary image ${publicId}: ${err.message}`);
+            }
+            return;
+        }
         const filePath = (0, path_1.join)(process.cwd(), publicId.replace(/^\//, ''));
         try {
             await fs_1.promises.unlink(filePath);
