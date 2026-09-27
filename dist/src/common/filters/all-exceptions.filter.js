@@ -13,6 +13,31 @@ let AllExceptionsFilter = AllExceptionsFilter_1 = class AllExceptionsFilter {
     constructor() {
         this.logger = new common_1.Logger(AllExceptionsFilter_1.name);
     }
+    describeException(exception) {
+        if (exception instanceof Error) {
+            return `${exception.name}: ${exception.message}`;
+        }
+        if (typeof exception === 'string')
+            return exception;
+        if (typeof exception !== 'object' || exception === null)
+            return String(exception);
+        const details = exception;
+        const fields = ['name', 'code', 'http_code', 'message']
+            .map((key) => {
+            const value = details[key];
+            return typeof value === 'string' || typeof value === 'number'
+                ? `${key}=${value}`
+                : null;
+        })
+            .filter((value) => value !== null);
+        const nestedError = details.error;
+        if (typeof nestedError === 'object' && nestedError !== null) {
+            const nestedMessage = nestedError.message;
+            if (typeof nestedMessage === 'string')
+                fields.push(`error=${nestedMessage}`);
+        }
+        return fields.length > 0 ? fields.join(' ') : Object.prototype.toString.call(exception);
+    }
     catch(exception, host) {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse();
@@ -35,7 +60,7 @@ let AllExceptionsFilter = AllExceptionsFilter_1 = class AllExceptionsFilter {
             this.logger.error(exception.message, exception.stack);
         }
         if (status === common_1.HttpStatus.INTERNAL_SERVER_ERROR) {
-            this.logger.error(`Unhandled exception on ${request.method} ${request.url}`, exception instanceof Error ? exception.stack : String(exception));
+            this.logger.error(`Unhandled exception on ${request.method} ${request.url}: ${this.describeException(exception)}`, exception instanceof Error ? exception.stack : undefined);
         }
         response.status(status).json({
             success: false,

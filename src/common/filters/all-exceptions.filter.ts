@@ -12,6 +12,32 @@ import { Request, Response } from 'express';
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  private describeException(exception: unknown): string {
+    if (exception instanceof Error) {
+      return `${exception.name}: ${exception.message}`;
+    }
+    if (typeof exception === 'string') return exception;
+    if (typeof exception !== 'object' || exception === null) return String(exception);
+
+    const details = exception as Record<string, unknown>;
+    const fields = ['name', 'code', 'http_code', 'message']
+      .map((key) => {
+        const value = details[key];
+        return typeof value === 'string' || typeof value === 'number'
+          ? `${key}=${value}`
+          : null;
+      })
+      .filter((value): value is string => value !== null);
+
+    const nestedError = details.error;
+    if (typeof nestedError === 'object' && nestedError !== null) {
+      const nestedMessage = (nestedError as Record<string, unknown>).message;
+      if (typeof nestedMessage === 'string') fields.push(`error=${nestedMessage}`);
+    }
+
+    return fields.length > 0 ? fields.join(' ') : Object.prototype.toString.call(exception);
+  }
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -37,8 +63,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `Unhandled exception on ${request.method} ${request.url}`,
-        exception instanceof Error ? exception.stack : String(exception),
+        `Unhandled exception on ${request.method} ${request.url}: ${this.describeException(exception)}`,
+        exception instanceof Error ? exception.stack : undefined,
       );
     }
 
