@@ -361,6 +361,7 @@ model HomepageContent {
   heroImageUrl       String?
   welcomeMessage     String?  @db.Text
   welcomeImageUrl    String?
+  imageSectionUrl    String?
   missionPreview     String?  @db.Text
   visionPreview      String?  @db.Text
   updatedAt          DateTime @updatedAt

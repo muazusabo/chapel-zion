@@ -35,6 +35,11 @@ export class UpdateHomepageDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  imageSectionUrl?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   missionPreview?: string;
 
   @ApiProperty({ required: false })

@@ -37,13 +37,15 @@ const client_1 = require("@prisma/client");
 const argon2 = __importStar(require("argon2"));
 const prisma = new client_1.PrismaClient();
 async function main() {
-    const email = process.env.SUPER_ADMIN_EMAIL;
+    const email = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
     const password = process.env.SUPER_ADMIN_PASSWORD;
     const name = process.env.SUPER_ADMIN_NAME ?? 'SAZU FCS Admin';
     if (!email || !password) {
         throw new Error('SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD must be set in .env before seeding.');
     }
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' } },
+    });
     if (!existing) {
         const passwordHash = await argon2.hash(password);
         await prisma.user.create({

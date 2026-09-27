@@ -1,0 +1,1 @@
+ALTER TABLE "homepage_content" ADD COLUMN "imageSectionUrl" TEXT;
